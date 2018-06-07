@@ -14,8 +14,8 @@ import (
 // Intern implements the interner. Allocate it
 type Intern struct {
 	sb             stringbank.Stringbank
-	table          []entry
-	oldTable       []entry
+	table          table
+	oldTable       table
 	count          int
 	oldTableCursor int
 }
@@ -28,7 +28,10 @@ func New(cap int) *Intern {
 		cap = 1 << uint(64-bits.LeadingZeros(uint(cap-1)))
 	}
 	return &Intern{
-		table: make([]entry, cap),
+		table: table{
+			hashes:  make([]uint32, cap),
+			indices: make([]int32, cap),
+		},
 	}
 }
 
@@ -39,7 +42,7 @@ func (i *Intern) Len() int {
 
 // Cap returns the size of the intern table
 func (i *Intern) Cap() int {
-	return len(i.table)
+	return i.table.len()
 }
 
 // Get returns the stored string for an offset. Offset can be obtained via OffsetFor.
@@ -61,7 +64,7 @@ func (i *Intern) OffsetFor(val string) int {
 
 	hash := aeshash.Hash(val)
 
-	if i.oldTable != nil {
+	if i.oldTable.len() != 0 {
 		_, index := i.findInTable(i.table, val, hash)
 		if index != 0 {
 			return index - 1
@@ -76,10 +79,8 @@ func (i *Intern) OffsetFor(val string) int {
 	// String was not found, so we want to store it. Cursor is the index where we should
 	// store it
 	offset := i.sb.Save(val)
-	i.table[cursor] = entry{
-		hash:  hash,
-		index: int32(offset + 1),
-	}
+	i.table.hashes[cursor] = hash
+	i.table.indices[cursor] = int32(offset + 1)
 	i.count++
 
 	return offset
@@ -87,14 +88,15 @@ func (i *Intern) OffsetFor(val string) int {
 
 // findInTable find the string val in the hash table. If the string is present, it returns the
 // place in the table where it was found, plus the stringbank offset of the string + 1
-func (i *Intern) findInTable(table []entry, val string, hashVal uint32) (cursor int, index int) {
-	l := len(table)
+func (i *Intern) findInTable(table table, val string, hashVal uint32) (cursor int, index int) {
+	l := table.len()
 	cursor = int(hashVal) & (l - 1)
 	start := cursor
-	for table[cursor].index != 0 {
-		e := &table[cursor]
-		if e.hash == hashVal && i.sb.Get(int(e.index-1)) == val {
-			return cursor, int(e.index)
+	for table.indices[cursor] != 0 {
+		if table.hashes[cursor] == hashVal {
+			if index := int(table.indices[cursor]); i.sb.Get(index-1) == val {
+				return cursor, index
+			}
 		}
 		cursor++
 		if cursor == l {
@@ -107,11 +109,11 @@ func (i *Intern) findInTable(table []entry, val string, hashVal uint32) (cursor 
 	return cursor, 0
 }
 
-func (i *Intern) copyEntryToTable(table []entry, e entry) {
-	l := len(table)
-	cursor := int(e.hash) & (l - 1)
+func (i *Intern) copyEntryToTable(table table, index int32, hash uint32) {
+	l := table.len()
+	cursor := int(hash) & (l - 1)
 	start := cursor
-	for table[cursor].index != 0 {
+	for table.indices[cursor] != 0 {
 		// the entry we're copying in is guaranteed not to be already
 		// present, so we're just looking for an empty space
 		cursor++
@@ -122,30 +124,34 @@ func (i *Intern) copyEntryToTable(table []entry, e entry) {
 			panic("out of space (resize)!")
 		}
 	}
-	table[cursor] = e
+	table.indices[cursor] = index
+	table.hashes[cursor] = hash
 }
 
 func (i *Intern) resize() {
-	if i.table == nil {
-		i.table = make([]entry, 16)
+	if i.table.hashes == nil {
+		i.table.hashes = make([]uint32, 16)
+		i.table.indices = make([]int32, 16)
 	}
 
-	if i.count < len(i.table)*3/4 && i.oldTable == nil {
+	if i.count < i.table.len()*3/4 && i.oldTable.len() == 0 {
 		return
 	}
 
-	if i.oldTable == nil {
-		i.oldTable, i.table = i.table, make([]entry, len(i.table)*2)
+	if i.oldTable.hashes == nil {
+		i.oldTable, i.table = i.table, table{
+			hashes:  make([]uint32, len(i.table.hashes)*2),
+			indices: make([]int32, len(i.table.indices)*2),
+		}
 	}
 
 	// We copy items between tables 16 at a time. Since we do this every time
 	// anyone writes to the table we won't run out of space in the new table
 	// before this is complete
-	l := len(i.oldTable)
+	l := i.oldTable.len()
 	for k := 0; k < 16; k++ {
-		e := i.oldTable[k+i.oldTableCursor]
-		if e.index != 0 {
-			i.copyEntryToTable(i.table, e)
+		if index := i.oldTable.indices[k+i.oldTableCursor]; index != 0 {
+			i.copyEntryToTable(i.table, index, i.oldTable.hashes[k+i.oldTableCursor])
 			// The entry can exist in the old and new versions of the table without
 			// problems. If we did try to delete from the old table we'd have issues
 			// searching forward from clashing entries.
@@ -153,16 +159,23 @@ func (i *Intern) resize() {
 	}
 	i.oldTableCursor += 16
 	if i.oldTableCursor >= l {
-		i.oldTable = nil
+		i.oldTable.hashes = nil
+		i.oldTable.indices = nil
 		i.oldTableCursor = 0
 	}
 }
 
-type entry struct {
-	// We keep the hash alongside each entry to make it much faster to resize
-	// It also speeds up stepping through entries when hashes clash
-	hash uint32
+// table represents a hash table. We keep the indices and hashes separate in
+// case we want to use different size types in the future
+type table struct {
+	// We keep hashes in the table to speed up resizing, and also stepping through
+	// entries that have different hashes but hit the same bucket
+	hashes []uint32
 	// index is the index of the string in the stringbank, plus 1 so that valid
 	// entries are never zero
-	index int32
+	indices []int32
+}
+
+func (t table) len() int {
+	return len(t.hashes)
 }
