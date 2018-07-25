@@ -6,6 +6,7 @@ import (
 	"testing"
 	"unsafe"
 
+	"github.com/bmizerany/assert"
 	"github.com/philpearl/intern"
 )
 
@@ -26,6 +27,40 @@ func TestBasic(t *testing.T) {
 
 	if datapointer(hat) != datapointer(hat2) {
 		t.Errorf("hat pointers differ")
+	}
+}
+
+func TestGrowth(t *testing.T) {
+	in := intern.New(15)
+
+	for i := 0; i < 1000; i++ {
+		val := strconv.Itoa(i)
+		assert.Equal(t, val, in.Deduplicate(val))
+	}
+
+	for i := 0; i < 1000; i++ {
+		val := strconv.Itoa(i)
+		assert.Equal(t, val, in.Deduplicate(val))
+	}
+}
+
+func TestGrowth2(t *testing.T) {
+	in := intern.New(15)
+
+	for i := 0; i < 1000; i++ {
+		val := strconv.Itoa(i)
+		assert.Equal(t, val, in.Deduplicate(val))
+		assert.Equal(t, val, in.Deduplicate(val))
+	}
+}
+
+func TestNoNew(t *testing.T) {
+	in := &intern.Intern{}
+
+	for i := 0; i < 1000; i++ {
+		val := strconv.Itoa(i)
+		assert.Equal(t, val, in.Deduplicate(val))
+		assert.Equal(t, val, in.Deduplicate(val))
 	}
 }
 

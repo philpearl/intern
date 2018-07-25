@@ -65,7 +65,7 @@ func (i *Intern) OffsetFor(val string) int {
 	hash := aeshash.Hash(val)
 
 	if i.oldTable.len() != 0 {
-		_, index := i.findInTable(i.table, val, hash)
+		_, index := i.findInTable(i.oldTable, val, hash)
 		if index != 0 {
 			return index - 1
 		}
