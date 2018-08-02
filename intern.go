@@ -13,7 +13,7 @@ import (
 
 // Intern implements the interner. Allocate it
 type Intern struct {
-	sb             stringbank.Stringbank
+	stringbank.Stringbank
 	table          table
 	oldTable       table
 	count          int
@@ -45,19 +45,15 @@ func (i *Intern) Cap() int {
 	return i.table.len()
 }
 
-// Get returns the stored string for an offset. Offset can be obtained via OffsetFor.
-func (i *Intern) Get(offset int) string {
-	return i.sb.Get(offset)
-}
-
 // Deduplicate takes a string and returns a permanently stored version. This will always
 // be backed by the same memory for the same string.
 func (i *Intern) Deduplicate(val string) string {
-	return i.Get(i.OffsetFor(val))
+	return i.Get(i.Save(val))
 }
 
-// OffsetFor returns an integer offset for the requested string in our deduplicated string store
-func (i *Intern) OffsetFor(val string) int {
+// Save stores a string in out deduplicated string store, and returns an integer offset
+// for accessing it.
+func (i *Intern) Save(val string) int {
 	// we use a hashtable where the keys are stringbank offsets, but comparisons are done on
 	// strings. There is no value to store
 	i.resize()
@@ -78,7 +74,7 @@ func (i *Intern) OffsetFor(val string) int {
 
 	// String was not found, so we want to store it. Cursor is the index where we should
 	// store it
-	offset := i.sb.Save(val)
+	offset := i.Stringbank.Save(val)
 	i.table.hashes[cursor] = hash
 	i.table.indices[cursor] = int32(offset + 1)
 	i.count++
@@ -94,7 +90,7 @@ func (i *Intern) findInTable(table table, val string, hashVal uint32) (cursor in
 	start := cursor
 	for table.indices[cursor] != 0 {
 		if table.hashes[cursor] == hashVal {
-			if index := int(table.indices[cursor]); i.sb.Get(index-1) == val {
+			if index := int(table.indices[cursor]); i.Get(index-1) == val {
 				return cursor, index
 			}
 		}

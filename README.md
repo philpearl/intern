@@ -11,6 +11,6 @@ intern has a number of benefits
 
 ```go
 i := intern.New()
-hat := i.OffsetFor("hat")
+hat := i.Save("hat")
 fmt.Printf(i.Get(hat))
 ```
