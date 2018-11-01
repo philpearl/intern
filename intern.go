@@ -30,7 +30,7 @@ func New(cap int) *Intern {
 	return &Intern{
 		table: table{
 			hashes:  make([]uint32, cap),
-			indices: make([]int32, cap),
+			indices: make([]int, cap),
 		},
 	}
 }
@@ -76,7 +76,7 @@ func (i *Intern) Save(val string) int {
 	// store it
 	offset := i.Stringbank.Save(val)
 	i.table.hashes[cursor] = hash
-	i.table.indices[cursor] = int32(offset + 1)
+	i.table.indices[cursor] = offset + 1
 	i.count++
 
 	return offset
@@ -105,7 +105,7 @@ func (i *Intern) findInTable(table table, val string, hashVal uint32) (cursor in
 	return cursor, 0
 }
 
-func (i *Intern) copyEntryToTable(table table, index int32, hash uint32) {
+func (i *Intern) copyEntryToTable(table table, index int, hash uint32) {
 	l := table.len()
 	cursor := int(hash) & (l - 1)
 	start := cursor
@@ -127,7 +127,7 @@ func (i *Intern) copyEntryToTable(table table, index int32, hash uint32) {
 func (i *Intern) resize() {
 	if i.table.hashes == nil {
 		i.table.hashes = make([]uint32, 16)
-		i.table.indices = make([]int32, 16)
+		i.table.indices = make([]int, 16)
 	}
 
 	if i.count < i.table.len()*3/4 && i.oldTable.len() == 0 {
@@ -137,7 +137,7 @@ func (i *Intern) resize() {
 	if i.oldTable.hashes == nil {
 		i.oldTable, i.table = i.table, table{
 			hashes:  make([]uint32, len(i.table.hashes)*2),
-			indices: make([]int32, len(i.table.indices)*2),
+			indices: make([]int, len(i.table.indices)*2),
 		}
 	}
 
@@ -169,7 +169,7 @@ type table struct {
 	hashes []uint32
 	// index is the index of the string in the stringbank, plus 1 so that valid
 	// entries are never zero
-	indices []int32
+	indices []int
 }
 
 func (t table) len() int {
