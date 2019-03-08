@@ -6,8 +6,8 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/bmizerany/assert"
 	"github.com/philpearl/intern"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestBasic(t *testing.T) {
