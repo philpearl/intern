@@ -6,10 +6,17 @@ package intern
 
 import (
 	"math/bits"
+	"reflect"
+	"unsafe"
 
-	"github.com/philpearl/aeshash"
 	"github.com/philpearl/stringbank"
 )
+
+// We use the runtime's map hash function without the overhead of using
+// hash/maphash
+//go:linkname runtime_memhash runtime.memhash
+//go:noescape
+func runtime_memhash(p unsafe.Pointer, seed, s uintptr) uintptr
 
 // Intern implements the interner. Allocate it
 type Intern struct {
@@ -58,7 +65,11 @@ func (i *Intern) Save(val string) int {
 	// strings. There is no value to store
 	i.resize()
 
-	hash := aeshash.Hash(val)
+	hash := uint32(runtime_memhash(
+		unsafe.Pointer((*reflect.StringHeader)(unsafe.Pointer(&val)).Data),
+		0,
+		uintptr(len(val)),
+	))
 
 	if i.oldTable.len() != 0 {
 		_, index := i.findInTable(i.oldTable, val, hash)
